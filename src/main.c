@@ -520,6 +520,7 @@ bool update_uniform_buffer(VulkanContext *ctx) {
     return true;
 }
 
+
 bool record_command_buffer(VulkanContext *ctx, uint32_t imageIndex) {
     VkCommandBufferBeginInfo beginInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -541,7 +542,7 @@ bool record_command_buffer(VulkanContext *ctx, uint32_t imageIndex) {
     vkCmdBeginRenderPass(ctx->commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(ctx->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->graphicsPipeline);
     vkCmdBindDescriptorSets(ctx->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->pipelineLayout, 0, 1, &ctx->descriptorSet, 0, NULL);
-    vkCmdDraw(ctx->commandBuffer, 3, 1, 0, 0);
+    vkCmdDraw(ctx->commandBuffer, 6, 1, 0, 0); // Changed: Draw 6 vertices (indices)
     vkCmdEndRenderPass(ctx->commandBuffer);
     VK_CHECK(vkEndCommandBuffer(ctx->commandBuffer));
     return true;
