@@ -619,18 +619,21 @@ int main(int argc, char *argv[]) {
             } else if (event.type == SDL_EVENT_KEY_DOWN) {
                 switch (event.key.key) {
                     case SDLK_W:
-                        ctx->offsetY += moveSpeed;
+                        ctx->offsetY -= moveSpeed; // Changed: Decrease Y to move up
                         break;
                     case SDLK_S:
-                        ctx->offsetY -= moveSpeed;
+                        ctx->offsetY += moveSpeed; // Changed: Increase Y to move down
                         break;
                     case SDLK_A:
-                        ctx->offsetX -= moveSpeed;
+                        ctx->offsetX -= moveSpeed; // Left (unchanged)
                         break;
                     case SDLK_D:
-                        ctx->offsetX += moveSpeed;
+                        ctx->offsetX += moveSpeed; // Right (unchanged)
                         break;
                 }
+                // Optional: Clamp offsets to keep triangle on screen
+                ctx->offsetX = SDL_clamp(ctx->offsetX, -1.0f, 1.0f);
+                ctx->offsetY = SDL_clamp(ctx->offsetY, -1.0f, 1.0f);
             }
         }
 
@@ -694,8 +697,6 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
-
-
 
 
     cleanup(ctx);
