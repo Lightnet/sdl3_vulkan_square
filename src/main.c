@@ -49,7 +49,6 @@ typedef struct {
     float offsetY;                       // New: Track Y offset
 } VulkanContext;
 
-
 bool init_vulkan(VulkanContext *ctx) {
     // Create Vulkan instance
     uint32_t extensionCount = 0;
@@ -337,8 +336,6 @@ bool create_descriptor_pool_and_set(VulkanContext *ctx) {
     return true;
 }
 
-
-
 bool create_graphics_pipeline(VulkanContext *ctx) {
     VkShaderModule vertShaderModule;
     VkShaderModuleCreateInfo vertShaderInfo = {
@@ -612,30 +609,36 @@ int main(int argc, char *argv[]) {
     bool running = true;
     SDL_Event event;
     float moveSpeed = 0.01f; // Adjust as needed
+    bool keyState[4] = { false, false, false, false }; // W, A, S, D
+
     while (running) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
             } else if (event.type == SDL_EVENT_KEY_DOWN) {
                 switch (event.key.key) {
-                    case SDLK_W:
-                        ctx->offsetY -= moveSpeed; // Changed: Decrease Y to move up
-                        break;
-                    case SDLK_S:
-                        ctx->offsetY += moveSpeed; // Changed: Increase Y to move down
-                        break;
-                    case SDLK_A:
-                        ctx->offsetX -= moveSpeed; // Left (unchanged)
-                        break;
-                    case SDLK_D:
-                        ctx->offsetX += moveSpeed; // Right (unchanged)
-                        break;
+                    case SDLK_W: keyState[0] = true; break;
+                    case SDLK_A: keyState[1] = true; break;
+                    case SDLK_S: keyState[2] = true; break;
+                    case SDLK_D: keyState[3] = true; break;
                 }
-                // Optional: Clamp offsets to keep triangle on screen
-                ctx->offsetX = SDL_clamp(ctx->offsetX, -1.0f, 1.0f);
-                ctx->offsetY = SDL_clamp(ctx->offsetY, -1.0f, 1.0f);
+            } else if (event.type == SDL_EVENT_KEY_UP) {
+                switch (event.key.key) {
+                    case SDLK_W: keyState[0] = false; break;
+                    case SDLK_A: keyState[1] = false; break;
+                    case SDLK_S: keyState[2] = false; break;
+                    case SDLK_D: keyState[3] = false; break;
+                }
             }
         }
+
+        // Update offsets based on key states
+        if (keyState[0]) ctx->offsetY -= moveSpeed; // W: Move up
+        if (keyState[1]) ctx->offsetX -= moveSpeed; // A: Move left
+        if (keyState[2]) ctx->offsetY += moveSpeed; // S: Move down
+        if (keyState[3]) ctx->offsetX += moveSpeed; // D: Move right
+        ctx->offsetX = SDL_clamp(ctx->offsetX, -1.0f, 1.0f);
+        ctx->offsetY = SDL_clamp(ctx->offsetY, -1.0f, 1.0f);
 
         if (!update_uniform_buffer(ctx)) {
             cleanup(ctx);
@@ -703,8 +706,6 @@ int main(int argc, char *argv[]) {
     free(ctx);
     return 0;
 }
-
-
 
 
 //
