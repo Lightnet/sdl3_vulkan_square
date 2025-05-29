@@ -49,6 +49,10 @@ typedef struct {
     float offsetY;                       // New: Track Y offset
 } VulkanContext;
 
+// Function prototypes
+bool recreate_swapchain(VulkanContext *ctx);
+
+
 bool init_vulkan(VulkanContext *ctx) {
     // Create Vulkan instance
     uint32_t extensionCount = 0;
@@ -134,64 +138,7 @@ bool init_vulkan(VulkanContext *ctx) {
 }
 
 bool create_swapchain(VulkanContext *ctx) {
-    VkSurfaceCapabilitiesKHR capabilities;
-    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->physicalDevice, ctx->surface, &capabilities));
-
-    uint32_t formatCount;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(ctx->physicalDevice, ctx->surface, &formatCount, NULL);
-    VkSurfaceFormatKHR *formats = malloc(formatCount * sizeof(VkSurfaceFormatKHR));
-    vkGetPhysicalDeviceSurfaceFormatsKHR(ctx->physicalDevice, ctx->surface, &formatCount, formats);
-    VkSurfaceFormatKHR format = formats[0]; // Pick first format
-    free(formats);
-
-    uint32_t presentModeCount;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(ctx->physicalDevice, ctx->surface, &presentModeCount, NULL);
-    VkPresentModeKHR *presentModes = malloc(presentModeCount * sizeof(VkPresentModeKHR));
-    vkGetPhysicalDeviceSurfacePresentModesKHR(ctx->physicalDevice, ctx->surface, &presentModeCount, presentModes);
-    VkPresentModeKHR presentMode = presentModes[0]; // Pick first mode
-    free(presentModes);
-
-    VkSwapchainCreateInfoKHR swapchainCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .surface = ctx->surface,
-        .minImageCount = capabilities.minImageCount + 1,
-        .imageFormat = format.format,
-        .imageColorSpace = format.colorSpace,
-        .imageExtent = capabilities.currentExtent,
-        .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .preTransform = capabilities.currentTransform,
-        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = presentMode,
-        .clipped = VK_TRUE,
-        .oldSwapchain = VK_NULL_HANDLE
-    };
-
-    VK_CHECK(vkCreateSwapchainKHR(ctx->device, &swapchainCreateInfo, NULL, &ctx->swapchain));
-
-    vkGetSwapchainImagesKHR(ctx->device, ctx->swapchain, &ctx->swapchainImageCount, NULL);
-    ctx->swapchainImages = malloc(ctx->swapchainImageCount * sizeof(VkImage));
-    vkGetSwapchainImagesKHR(ctx->device, ctx->swapchain, &ctx->swapchainImageCount, ctx->swapchainImages);
-
-    ctx->swapchainImageViews = malloc(ctx->swapchainImageCount * sizeof(VkImageView));
-    for (uint32_t i = 0; i < ctx->swapchainImageCount; i++) {
-        VkImageViewCreateInfo viewInfo = {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = ctx->swapchainImages[i],
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = format.format,
-            .components = {VK_COMPONENT_SWIZZLE_IDENTITY},
-            .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .subresourceRange.baseMipLevel = 0,
-            .subresourceRange.levelCount = 1,
-            .subresourceRange.baseArrayLayer = 0,
-            .subresourceRange.layerCount = 1
-        };
-        VK_CHECK(vkCreateImageView(ctx->device, &viewInfo, NULL, &ctx->swapchainImageViews[i]));
-    }
-
-    return true;
+    return recreate_swapchain(ctx);
 }
 
 bool create_render_pass(VulkanContext *ctx) {
@@ -336,6 +283,7 @@ bool create_descriptor_pool_and_set(VulkanContext *ctx) {
     return true;
 }
 
+
 bool create_graphics_pipeline(VulkanContext *ctx) {
     VkShaderModule vertShaderModule;
     VkShaderModuleCreateInfo vertShaderInfo = {
@@ -380,26 +328,10 @@ bool create_graphics_pipeline(VulkanContext *ctx) {
         .primitiveRestartEnable = VK_FALSE
     };
 
-    VkViewport viewport = {
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = 800.0f,
-        .height = 600.0f,
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f
-    };
-
-    VkRect2D scissor = {
-        .offset = {0, 0},
-        .extent = {800, 600}
-    };
-
     VkPipelineViewportStateCreateInfo viewportState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount = 1,
-        .pViewports = &viewport,
-        .scissorCount = 1,
-        .pScissors = &scissor
+        .scissorCount = 1
     };
 
     VkPipelineRasterizationStateCreateInfo rasterizer = {
@@ -431,10 +363,20 @@ bool create_graphics_pipeline(VulkanContext *ctx) {
         .pAttachments = &colorBlendAttachment
     };
 
+    VkDynamicState dynamicStates[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2,
+        .pDynamicStates = dynamicStates
+    };
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,                        // Changed from 0
-        .pSetLayouts = &ctx->descriptorSetLayout,   // New
+        .setLayoutCount = 1,
+        .pSetLayouts = &ctx->descriptorSetLayout,
         .pushConstantRangeCount = 0
     };
 
@@ -450,6 +392,7 @@ bool create_graphics_pipeline(VulkanContext *ctx) {
         .pRasterizationState = &rasterizer,
         .pMultisampleState = &multisampling,
         .pColorBlendState = &colorBlending,
+        .pDynamicState = &dynamicState,
         .layout = ctx->pipelineLayout,
         .renderPass = ctx->renderPass,
         .subpass = 0
@@ -461,6 +404,8 @@ bool create_graphics_pipeline(VulkanContext *ctx) {
     vkDestroyShaderModule(ctx->device, vertShaderModule, NULL);
     return true;
 }
+
+
 
 bool create_framebuffers(VulkanContext *ctx) {
     ctx->framebuffers = malloc(ctx->swapchainImageCount * sizeof(VkFramebuffer));
@@ -520,6 +465,114 @@ bool update_uniform_buffer(VulkanContext *ctx) {
     return true;
 }
 
+bool recreate_swapchain(VulkanContext *ctx) {
+    // Wait for the device to be idle
+    vkDeviceWaitIdle(ctx->device);
+
+    // Cleanup old swapchain resources
+    for (uint32_t i = 0; i < ctx->swapchainImageCount; i++) {
+        vkDestroyFramebuffer(ctx->device, ctx->framebuffers[i], NULL);
+        vkDestroyImageView(ctx->device, ctx->swapchainImageViews[i], NULL);
+    }
+    free(ctx->framebuffers);
+    free(ctx->swapchainImages);
+    free(ctx->swapchainImageViews);
+    vkDestroySwapchainKHR(ctx->device, ctx->swapchain, NULL);
+
+    // Get new window size
+    int width, height;
+    SDL_GetWindowSize(ctx->window, &width, &height);
+    if (width == 0 || height == 0) {
+        // Window is minimized, skip swapchain recreation
+        return false;
+    }
+
+    // Recreate swapchain
+    VkSurfaceCapabilitiesKHR capabilities;
+    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->physicalDevice, ctx->surface, &capabilities));
+
+    uint32_t formatCount;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(ctx->physicalDevice, ctx->surface, &formatCount, NULL);
+    VkSurfaceFormatKHR *formats = malloc(formatCount * sizeof(VkSurfaceFormatKHR));
+    vkGetPhysicalDeviceSurfaceFormatsKHR(ctx->physicalDevice, ctx->surface, &formatCount, formats);
+    VkSurfaceFormatKHR format = formats[0]; // Pick first format
+    free(formats);
+
+    uint32_t presentModeCount;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(ctx->physicalDevice, ctx->surface, &presentModeCount, NULL);
+    VkPresentModeKHR *presentModes = malloc(presentModeCount * sizeof(VkPresentModeKHR));
+    vkGetPhysicalDeviceSurfacePresentModesKHR(ctx->physicalDevice, ctx->surface, &presentModeCount, presentModes);
+    VkPresentModeKHR presentMode = presentModes[0]; // Pick first mode
+    free(presentModes);
+
+    VkSwapchainCreateInfoKHR swapchainCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface = ctx->surface,
+        .minImageCount = capabilities.minImageCount + 1,
+        .imageFormat = format.format,
+        .imageColorSpace = format.colorSpace,
+        .imageExtent = { (uint32_t)width, (uint32_t)height }, // Use window size
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .preTransform = capabilities.currentTransform,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = presentMode,
+        .clipped = VK_TRUE,
+        .oldSwapchain = VK_NULL_HANDLE
+    };
+
+    // Ensure extent is within bounds
+    swapchainCreateInfo.imageExtent.width = SDL_clamp(swapchainCreateInfo.imageExtent.width,
+                                                      capabilities.minImageExtent.width,
+                                                      capabilities.maxImageExtent.width);
+    swapchainCreateInfo.imageExtent.height = SDL_clamp(swapchainCreateInfo.imageExtent.height,
+                                                       capabilities.minImageExtent.height,
+                                                       capabilities.maxImageExtent.height);
+
+    VK_CHECK(vkCreateSwapchainKHR(ctx->device, &swapchainCreateInfo, NULL, &ctx->swapchain));
+
+    // Get new swapchain images
+    vkGetSwapchainImagesKHR(ctx->device, ctx->swapchain, &ctx->swapchainImageCount, NULL);
+    ctx->swapchainImages = malloc(ctx->swapchainImageCount * sizeof(VkImage));
+    vkGetSwapchainImagesKHR(ctx->device, ctx->swapchain, &ctx->swapchainImageCount, ctx->swapchainImages);
+
+    // Create new image views
+    ctx->swapchainImageViews = malloc(ctx->swapchainImageCount * sizeof(VkImageView));
+    for (uint32_t i = 0; i < ctx->swapchainImageCount; i++) {
+        VkImageViewCreateInfo viewInfo = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = ctx->swapchainImages[i],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = format.format,
+            .components = {VK_COMPONENT_SWIZZLE_IDENTITY},
+            .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .subresourceRange.baseMipLevel = 0,
+            .subresourceRange.levelCount = 1,
+            .subresourceRange.baseArrayLayer = 0,
+            .subresourceRange.layerCount = 1
+        };
+        VK_CHECK(vkCreateImageView(ctx->device, &viewInfo, NULL, &ctx->swapchainImageViews[i]));
+    }
+
+    // Create new framebuffers
+    ctx->framebuffers = malloc(ctx->swapchainImageCount * sizeof(VkFramebuffer));
+    for (uint32_t i = 0; i < ctx->swapchainImageCount; i++) {
+        VkFramebufferCreateInfo framebufferInfo = {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass = ctx->renderPass,
+            .attachmentCount = 1,
+            .pAttachments = &ctx->swapchainImageViews[i],
+            .width = (uint32_t)width,
+            .height = (uint32_t)height,
+            .layers = 1
+        };
+        VK_CHECK(vkCreateFramebuffer(ctx->device, &framebufferInfo, NULL, &ctx->framebuffers[i]));
+    }
+
+    return true;
+}
+
 
 bool record_command_buffer(VulkanContext *ctx, uint32_t imageIndex) {
     VkCommandBufferBeginInfo beginInfo = {
@@ -529,24 +582,46 @@ bool record_command_buffer(VulkanContext *ctx, uint32_t imageIndex) {
     VK_CHECK(vkBeginCommandBuffer(ctx->commandBuffer, &beginInfo));
 
     VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    int width, height;
+    SDL_GetWindowSize(ctx->window, &width, &height);
     VkRenderPassBeginInfo renderPassInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = ctx->renderPass,
         .framebuffer = ctx->framebuffers[imageIndex],
         .renderArea.offset = {0, 0},
-        .renderArea.extent = {800, 600},
+        .renderArea.extent = { (uint32_t)width, (uint32_t)height },
         .clearValueCount = 1,
         .pClearValues = &clearColor
     };
 
     vkCmdBeginRenderPass(ctx->commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // Set dynamic viewport
+    VkViewport viewport = {
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = (float)width,
+        .height = (float)height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
+    vkCmdSetViewport(ctx->commandBuffer, 0, 1, &viewport);
+
+    // Set dynamic scissor
+    VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = { (uint32_t)width, (uint32_t)height }
+    };
+    vkCmdSetScissor(ctx->commandBuffer, 0, 1, &scissor);
+
     vkCmdBindPipeline(ctx->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->graphicsPipeline);
     vkCmdBindDescriptorSets(ctx->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx->pipelineLayout, 0, 1, &ctx->descriptorSet, 0, NULL);
-    vkCmdDraw(ctx->commandBuffer, 6, 1, 0, 0); // Changed: Draw 6 vertices (indices)
+    vkCmdDraw(ctx->commandBuffer, 6, 1, 0, 0);
     vkCmdEndRenderPass(ctx->commandBuffer);
     VK_CHECK(vkEndCommandBuffer(ctx->commandBuffer));
     return true;
 }
+
 
 void cleanup(VulkanContext *ctx) {
     vkDeviceWaitIdle(ctx->device);
@@ -609,22 +684,35 @@ int main(int argc, char *argv[]) {
     
     bool running = true;
     SDL_Event event;
-    float moveSpeed = 0.01f; // Adjust as needed
+    float moveSpeed = 0.01f;
     bool keyState[4] = { false, false, false, false }; // W, A, S, D
-
     while (running) {
+        bool windowMinimized = false;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
+            } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
+                int width, height;
+                SDL_GetWindowSize(ctx->window, &width, &height);
+                if (width == 0 || height == 0) {
+                    windowMinimized = true;
+                } else {
+                    if (!recreate_swapchain(ctx)) {
+                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate swapchain");
+                        cleanup(ctx);
+                        free(ctx);
+                        return 1;
+                    }
+                }
             } else if (event.type == SDL_EVENT_KEY_DOWN) {
-                switch (event.key.key) {
+                switch (event.key.key) { // SDL 3.x
                     case SDLK_W: keyState[0] = true; break;
                     case SDLK_A: keyState[1] = true; break;
                     case SDLK_S: keyState[2] = true; break;
                     case SDLK_D: keyState[3] = true; break;
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
-                switch (event.key.key) {
+                switch (event.key.key) { // SDL 3.x
                     case SDLK_W: keyState[0] = false; break;
                     case SDLK_A: keyState[1] = false; break;
                     case SDLK_S: keyState[2] = false; break;
@@ -647,15 +735,33 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
+        // Skip rendering if window is minimized
+        if (windowMinimized) {
+            SDL_Delay(10);
+            continue;
+        }
+
         vkWaitForFences(ctx->device, 1, &ctx->inFlightFence, VK_TRUE, UINT64_MAX);
         vkResetFences(ctx->device, 1, &ctx->inFlightFence);
 
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(ctx->device, ctx->swapchain, UINT64_MAX, ctx->imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            // Handle swapchain recreation if needed
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+            int width, height;
+            SDL_GetWindowSize(ctx->window, &width, &height);
+            if (width == 0 || height == 0) {
+                windowMinimized = true;
+                SDL_Delay(10);
+                continue;
+            }
+            if (!recreate_swapchain(ctx)) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate swapchain");
+                cleanup(ctx);
+                free(ctx);
+                return 1;
+            }
             continue;
-        } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+        } else if (result != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to acquire swapchain image: %d", result);
             cleanup(ctx);
             free(ctx);
@@ -693,7 +799,19 @@ int main(int argc, char *argv[]) {
 
         result = vkQueuePresentKHR(ctx->graphicsQueue, &presentInfo);
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-            // Handle swapchain recreation if needed
+            int width, height;
+            SDL_GetWindowSize(ctx->window, &width, &height);
+            if (width == 0 || height == 0) {
+                windowMinimized = true;
+                SDL_Delay(10);
+                continue;
+            }
+            if (!recreate_swapchain(ctx)) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to recreate swapchain");
+                cleanup(ctx);
+                free(ctx);
+                return 1;
+            }
         } else if (result != VK_SUCCESS) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to present: %d", result);
             cleanup(ctx);
